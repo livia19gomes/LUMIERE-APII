@@ -275,32 +275,85 @@ def logout():
         return jsonify({"error": "Token inválido"}), 401
 codigos_temp = {}
 
-
-@app.route("/servicos", methods=["POST"])
+@app.route('/servicos', methods=['POST'])
 def cadastrar_servico():
-    data = request.json
+    data = request.get_json()
 
-    # conexão direta com Firebird
-    con = fdb.connect(
-        dsn='localhost:C:/caminho/do/seubanco.fdb',
-        user='SYSDBA',
-        password='masterkey',
-        charset='UTF8'
-    )
+    # Campos esperados
+    id_profissional = data.get('id_profissional')
+    categoria = data.get('categoria')
+    duracao = data.get('duracao')
+    preco = data.get('preco')
+
+    if not all([id_profissional, categoria, duracao, preco]):
+        return jsonify({"error": "Todos os campos são obrigatórios"}), 400
+
     cur = con.cursor()
-
-    # insert
     cur.execute("""
         INSERT INTO servicos (id_profissional, categoria, duracao, preco)
         VALUES (?, ?, ?, ?)
-    """, (
-        data["id_profissional"],
-        data["categoria"],
-        data["duracao"],
-        data["preco"]
-    ))
+    """, (id_profissional, categoria, duracao, preco))
 
     con.commit()
-    con.close()
+    cur.close()
 
-    return jsonify({"message": "Serviço cadastrado com sucesso!"})
+    return jsonify({"message": "Serviço cadastrado com sucesso!"}), 200
+
+@app.route('/servicos', methods=['GET'])
+def listar_servicos():
+    cur = con.cursor()
+    cur.execute("SELECT id_servico, id_profissional, categoria, duracao, preco FROM servicos")
+    servicos = cur.fetchall()
+    cur.close()
+
+    lista = []
+    for servico in servicos:
+        lista.append({
+            'id_servico': servico[0],
+            'id_profissional': servico[1],
+            'categoria': servico[2],
+            'duracao': servico[3],
+            'preco': float(servico[4])
+        })
+
+    return jsonify({
+        'mensagem': 'Lista de serviços',
+        'servicos': lista
+    }), 200
+
+@app.route('/servicos/<int:id>', methods=['PUT'])
+def editar_servico(id):
+    data = request.get_json()
+
+    id_profissional = data.get('id_profissional')
+    categoria = data.get('categoria')
+    duracao = data.get('duracao')
+    preco = data.get('preco')
+
+    cur = con.cursor()
+
+    cur.execute("SELECT id_servico FROM servicos WHERE id_servico = ?", (id,))
+    if not cur.fetchone():
+        cur.close()
+        return jsonify({"error": "Serviço não encontrado"}), 404
+
+    cur.execute("""
+        UPDATE servicos
+        SET id_profissional = ?, categoria = ?, duracao = ?, preco = ?
+        WHERE id_servico = ?
+    """, (id_profissional, categoria, duracao, preco, id))
+
+    con.commit()
+    cur.close()
+
+    return jsonify({
+        "message": "Serviço atualizado com sucesso!",
+        "servico": {
+            "id_servico": id,
+            "id_profissional": id_profissional,
+            "categoria": categoria,
+            "duracao": duracao,
+            "preco": float(preco)
+        }
+    }), 200
+
