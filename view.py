@@ -291,11 +291,10 @@ def cadastrar_servico():
 
     # insert
     cur.execute("""
-        INSERT INTO servicos (id_profissional, nome, categoria, duracao, preco)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO servicos (id_profissional, categoria, duracao, preco)
+        VALUES (?, ?, ?, ?)
     """, (
         data["id_profissional"],
-        data["nome"],
         data["categoria"],
         data["duracao"],
         data["preco"]
