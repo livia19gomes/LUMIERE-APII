@@ -8,3 +8,11 @@ class Cadastro:
         self.senha = senha
         self.categoria = categoria
         self.ativo = ativo
+
+class Servicos:
+    def __init__(self, id_servico, id_profissional, categoria, duracao, preco):
+        self.id_servico = id_servico
+        self.id_profissional = id_profissional
+        self.categoria = categoria
+        self.duracao = duracao
+        self.preco = preco

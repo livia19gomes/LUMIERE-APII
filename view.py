@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, datetime, timedelta
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
@@ -50,37 +50,53 @@ def verificar_adm(id_cadastro):
 
 @app.route('/cadastro', methods=['POST'])
 def cadastro_usuario():
-    data = request.get_json()
-    nome = data.get('nome')
-    email = data.get('email')
-    telefone = data.get('telefone')
-    senha = data.get('senha')
-    categoria = data.get('categoria')
-    tipo = data.get('tipo')
+    if not request.is_json:
+        return jsonify({"error": "É necessário enviar JSON válido"}), 400
 
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "JSON vazio"}), 400
+
+    campos = ['nome', 'email', 'telefone', 'senha', 'categoria', 'tipo']
+    faltando = [campo for campo in campos if not data.get(campo)]
+    if faltando:
+        return jsonify({"error": f"Campos obrigatórios faltando: {', '.join(faltando)}"}), 400
+
+    nome = data['nome']
+    email = data['email']
+    telefone = data['telefone']
+    senha = data['senha']
+    categoria = data['categoria']
+    tipo = data['tipo']
+
+    # Validação da senha
     senha_check = validar_senha(senha)
     if senha_check is not True:
         return senha_check
 
     cur = con.cursor()
-    cur.execute("SELECT 1 FROM cadastro WHERE email = ?", (email,))
 
+    # Verifica se o email já existe
+    cur.execute("SELECT 1 FROM cadastro WHERE email = ?", (email,))
     if cur.fetchone():
+        cur.close()
         return jsonify({"error": "Este usuário já foi cadastrado!"}), 400
 
-    senha = generate_password_hash(senha)
+    # Hash da senha
+    senha_hashed = generate_password_hash(senha)
 
+    # Inserção no banco
     cur.execute(
         "INSERT INTO CADASTRO (NOME, EMAIL, TELEFONE, SENHA, CATEGORIA, TIPO, ATIVO) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (nome, email, telefone, senha, categoria, tipo, True)
+        (nome, email, telefone, senha_hashed, categoria, tipo, True)
     )
-
     con.commit()
     cur.close()
 
     return jsonify({
-        'message': "Usuário cadastrado!",
-        'usuarios': {
+        'message': "Usuário cadastrado com sucesso!",
+        'usuario': {
             'nome': nome,
             'email': email,
             'tipo': tipo
@@ -189,6 +205,7 @@ def editar_usuario(id):
     })
 
 tentativas = {}
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -196,62 +213,52 @@ def login():
     senha = data.get('senha')
 
     if not email or not senha:
-        return jsonify({"error": "Todos os campos (email, senha) são obrigatórios."}), 400
+        return jsonify({"error": "Todos os campos são obrigatórios"}), 400
 
+    # Simulando busca no banco
     cur = con.cursor()
-    cur.execute("SELECT senha, tipo, id_cadastro, ativo, nome, telefone, email FROM CADASTRO WHERE EMAIL = ?", (email,))
+    cur.execute("SELECT senha, tipo, id_cadastro, ativo, nome, telefone FROM CADASTRO WHERE email = ?", (email,))
     usuario = cur.fetchone()
+    cur.close()
 
     if not usuario:
-        cur.close()
-        return jsonify({"error": "Usuário ou senha inválidos."}), 401
+        return jsonify({"error": "Usuário ou senha inválidos"}), 401
 
-    senha_armazenada = usuario[0]
-    tipo = usuario[1]
-    id_cadastro = usuario[2]
-    ativo = usuario[3]
-    nome = usuario[4]
-    telefone = usuario[5]
-
-    # Inicializa tentativas para o usuário se não existir
-    if id_cadastro not in tentativas:
-        tentativas[id_cadastro] = 0
+    senha_armazenada, tipo, id_cadastro, ativo, nome, telefone = usuario
 
     if not ativo:
-        cur.close()
-        return jsonify({"error": "Usuário inativo."}), 401
+        return jsonify({"error": "Usuário inativo"}), 401
 
-    # Verifica a senha
     if check_password_hash(senha_armazenada, senha):
-        # Reseta tentativas se login for bem-sucedido
-        tentativas[id_cadastro] = 0
+        # Login OK, gera token
         token = generate_token(id_cadastro, email)
-        cur.close()
         return jsonify({
-            'message': "Login realizado com sucesso!",
-            'usuarios': {
-                'nome': nome,
-                'telefone': telefone,
-                'email': email,
-                'id_cadastro': id_cadastro,
-                'tipo': tipo,
-                'token': token
+            "message": "Login realizado com sucesso!",
+            "usuario": {
+                "id_cadastro": id_cadastro,
+                "nome": nome,
+                "email": email,
+                "telefone": telefone,
+                "tipo": tipo,
+                "token": token
             }
         })
 
     else:
-        # Incrementa tentativas apenas se não for admin
+        # Controle de tentativas
+        if id_cadastro not in tentativas:
+            tentativas[id_cadastro] = 0
+
         if tipo != 'adm':
             tentativas[id_cadastro] += 1
             if tentativas[id_cadastro] >= 3:
+                cur = con.cursor()
                 cur.execute("UPDATE CADASTRO SET ATIVO = false WHERE id_cadastro = ?", (id_cadastro,))
                 con.commit()
                 cur.close()
                 return jsonify({"error": "Usuário inativado por excesso de tentativas."}), 403
 
-        cur.close()
-        return jsonify({"error": "Senha incorreta."}), 401
-
+        return jsonify({"error": "Senha incorreta"}), 401
 @app.route('/logout', methods=['POST'])
 def logout():
     token = request.headers.get('Authorization')
@@ -277,32 +284,64 @@ codigos_temp = {}
 
 @app.route('/servicos', methods=['POST'])
 def cadastrar_servico():
-    data = request.get_json()
+    try:
+        data = request.get_json()
 
-    # Campos esperados
-    id_profissional = data.get('id_profissional')
-    categoria = data.get('categoria')
-    duracao = data.get('duracao')
-    preco = data.get('preco')
+        id_profissional = data.get('id_profissional')
+        descricao = data.get('descricao')
+        duracao = data.get('duracao')
+        preco = data.get('preco')
+        data_servico = data.get('data')
+        horario_inicio = data.get('horario')
 
-    if not all([id_profissional, categoria, duracao, preco]):
-        return jsonify({"error": "Todos os campos são obrigatórios"}), 400
+        if not all([id_profissional, descricao, duracao, preco, data_servico, horario_inicio]):
+            return jsonify({"error": "Todos os campos são obrigatórios"}), 400
 
-    cur = con.cursor()
-    cur.execute("""
-        INSERT INTO servicos (id_profissional, categoria, duracao, preco)
-        VALUES (?, ?, ?, ?)
-    """, (id_profissional, categoria, duracao, preco))
+        cur = con.cursor()
 
-    con.commit()
-    cur.close()
+        cur.execute("""
+            SELECT horario, duracao 
+            FROM servicos 
+            WHERE id_profissional = :id_profissional AND data = :data_servico
+        """, {"id_profissional": id_profissional, "data_servico": data_servico})
 
-    return jsonify({"message": "Serviço cadastrado com sucesso!"}), 200
+        servicos_existentes = cur.fetchall()
 
+        novo_inicio = datetime.strptime(f"{data_servico} {horario_inicio}", "%Y-%m-%d %H:%M")
+        novo_fim = novo_inicio + timedelta(minutes=int(duracao))
+
+        for serv in servicos_existentes:
+            existente_inicio = datetime.strptime(f"{data_servico} {serv[0]}", "%Y-%m-%d %H:%M")
+            existente_fim = existente_inicio + timedelta(minutes=int(serv[1]))
+
+            if (novo_inicio < existente_fim) and (novo_fim > existente_inicio):
+                cur.close()
+                return jsonify({"error": "Serviço conflita com outro já agendado"}), 400
+
+        cur.execute("""
+            INSERT INTO servicos (id_profissional, descricao, duracao, preco, data, horario)
+            VALUES (:id_profissional, :descricao, :duracao, :preco, :data_servico, :horario_inicio)
+        """, {
+            "id_profissional": id_profissional,
+            "descricao": descricao,
+            "duracao": duracao,
+            "preco": preco,
+            "data_servico": data_servico,
+            "horario_inicio": horario_inicio
+        })
+
+        con.commit()
+        cur.close()
+
+        return jsonify({"message": "Serviço cadastrado com sucesso!"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 @app.route('/servicos', methods=['GET'])
 def listar_servicos():
     cur = con.cursor()
-    cur.execute("SELECT id_servico, id_profissional, categoria, duracao, preco FROM servicos")
+    # Seleciona todos os campos da tabela, incluindo data e horário
+    cur.execute("SELECT id_servico, id_profissional, descricao, duracao, preco, data_servico, horario FROM servicos")
     servicos = cur.fetchall()
     cur.close()
 
@@ -311,9 +350,11 @@ def listar_servicos():
         lista.append({
             'id_servico': servico[0],
             'id_profissional': servico[1],
-            'categoria': servico[2],
+            'descricao': servico[2],
             'duracao': servico[3],
-            'preco': float(servico[4])
+            'preco': float(servico[4]),
+            'data_servico': servico[5].strftime('%Y-%m-%d') if servico[5] else None,
+            'horario': servico[6].strftime('%H:%M') if servico[6] else None
         })
 
     return jsonify({
@@ -321,12 +362,13 @@ def listar_servicos():
         'servicos': lista
     }), 200
 
+
 @app.route('/servicos/<int:id>', methods=['PUT'])
 def editar_servico(id):
     data = request.get_json()
 
     id_profissional = data.get('id_profissional')
-    categoria = data.get('categoria')
+    descricao = data.get('descricao')
     duracao = data.get('duracao')
     preco = data.get('preco')
 
@@ -339,9 +381,9 @@ def editar_servico(id):
 
     cur.execute("""
         UPDATE servicos
-        SET id_profissional = ?, categoria = ?, duracao = ?, preco = ?
+        SET id_profissional = ?, descricao = ?, duracao = ?, preco = ?
         WHERE id_servico = ?
-    """, (id_profissional, categoria, duracao, preco, id))
+    """, (id_profissional, descricao, duracao, preco, id))
 
     con.commit()
     cur.close()
@@ -351,7 +393,7 @@ def editar_servico(id):
         "servico": {
             "id_servico": id,
             "id_profissional": id_profissional,
-            "categoria": categoria,
+            "descricao": descricao,
             "duracao": duracao,
             "preco": float(preco)
         }
