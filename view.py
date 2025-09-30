@@ -1,9 +1,10 @@
-from flask import Flask, jsonify, request, datetime, timedelta
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import re
 import fdb
+from datetime import datetime, timedelta
 from main import app, con
 
 app = Flask(__name__)
@@ -70,23 +71,19 @@ def cadastro_usuario():
     categoria = data['categoria']
     tipo = data['tipo']
 
-    # Validação da senha
     senha_check = validar_senha(senha)
     if senha_check is not True:
         return senha_check
 
     cur = con.cursor()
 
-    # Verifica se o email já existe
     cur.execute("SELECT 1 FROM cadastro WHERE email = ?", (email,))
     if cur.fetchone():
         cur.close()
         return jsonify({"error": "Este usuário já foi cadastrado!"}), 400
 
-    # Hash da senha
     senha_hashed = generate_password_hash(senha)
 
-    # Inserção no banco
     cur.execute(
         "INSERT INTO CADASTRO (NOME, EMAIL, TELEFONE, SENHA, CATEGORIA, TIPO, ATIVO) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (nome, email, telefone, senha_hashed, categoria, tipo, True)
@@ -259,6 +256,7 @@ def login():
                 return jsonify({"error": "Usuário inativado por excesso de tentativas."}), 403
 
         return jsonify({"error": "Senha incorreta"}), 401
+
 @app.route('/logout', methods=['POST'])
 def logout():
     token = request.headers.get('Authorization')
@@ -266,7 +264,6 @@ def logout():
     if not token:
         return jsonify({"error": "Token de autenticação necessário"}), 401
 
-    # Remove o 'Bearer' se presente no toke
     token = remover_bearer(token)
 
     try:
@@ -337,6 +334,7 @@ def cadastrar_servico():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 @app.route('/servicos', methods=['GET'])
 def listar_servicos():
     cur = con.cursor()
