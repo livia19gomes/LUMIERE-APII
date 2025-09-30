@@ -1,11 +1,12 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-import jwt
 import re
-import fdb
 from datetime import datetime, timedelta
 from main import app, con
+import jwt
+
+
 
 app = Flask(__name__)
 CORS(app, origins=["*"])
@@ -208,6 +209,8 @@ def login():
     data = request.get_json()
     email = data.get('email')
     senha = data.get('senha')
+
+    print(email, senha)
 
     if not email or not senha:
         return jsonify({"error": "Todos os campos são obrigatórios"}), 400
