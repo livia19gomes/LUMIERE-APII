@@ -14,7 +14,7 @@ app.config.from_pyfile('config.py')
 senha_secreta = app.config['SECRET_KEY']
 
 def generate_token(user_id, email):
-    payload = {'id_cadastro': user_id, 'email':email}
+    payload = {'id_usuario': user_id, 'email':email}
     token = jwt.encode(payload, senha_secreta, algorithm='HS256')
     return token
 
@@ -267,16 +267,15 @@ def logout():
     token = remover_bearer(token)
 
     try:
-        #  validar sua assinatura e verificar a validade
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
 
-        # "removendo" o token no cliente.
         return jsonify({"message": "Logout realizado com sucesso!"}), 200
 
     except jwt.ExpiredSignatureError:
         return jsonify({"error": "Token expirado"}), 401
     except jwt.InvalidTokenError:
         return jsonify({"error": "Token inválido"}), 401
+
 codigos_temp = {}
 
 @app.route('/servicos', methods=['POST'])
